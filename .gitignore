@@ -49,6 +49,14 @@
 .env
 .env.*
 !.env.example
+.deploy.env
+
+# --------------------------------------------
+# Deploy SSH keys (private — never commit)
+# --------------------------------------------
+github-deploy
+github-deploy.pub
+*.pem
 
 # --------------------------------------------
 # PHPUnit Cache

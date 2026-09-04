@@ -1,0 +1,103 @@
+name: Deploy to Hostinger (SSH)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, xml, curl, zip, pdo, gd, bcmath
+          coverage: none
+          tools: composer
+
+      - name: Install Composer dependencies
+        run: composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Build frontend assets
+        run: |
+          if [ -f package-lock.json ] || [ -f package.json ]; then
+            npm ci || npm install
+            npm run build
+          fi
+
+      - name: Setup SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add host to known_hosts
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          mkdir -p ~/.ssh
+          PORT="${SSH_PORT:-65002}"
+          ssh-keyscan -T 10 -p "$PORT" "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh-keyscan -T 10 -p 22 "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          echo "known_hosts entries: $(wc -l < ~/.ssh/known_hosts)"
+
+      - name: Deploy via rsync over SSH
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_PATH: ${{ secrets.SSH_PATH }}
+        run: |
+          PORT="${SSH_PORT:-65002}"
+          REMOTE_PATH="${SSH_PATH:-domains/tkhyl-ai.com/public_html/}"
+          echo "Deploying to ${SSH_USERNAME}@${SSH_HOST}:${PORT} -> ${REMOTE_PATH}"
+          rsync -avz --checksum \
+            -e "ssh -p ${PORT} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30" \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='node_modules/' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='!.env.example' \
+            --exclude='tests/' \
+            --exclude='*.md' \
+            --exclude='DEPLOY.md' \
+            --exclude='.DS_Store' \
+            --exclude='Thumbs.db' \
+            --exclude='hisan.zip' \
+            --exclude='github-deploy' \
+            --exclude='github-deploy.pub' \
+            --exclude='.deploy.env' \
+            --exclude='deploy.ps1' \
+            --exclude='phpunit.xml' \
+            --exclude='.phpunit.result.cache' \
+            --exclude='storage/logs/*' \
+            --exclude='storage/framework/cache/*' \
+            --exclude='storage/framework/sessions/*' \
+            --exclude='storage/framework/views/*' \
+            --exclude='mo/' \
+            ./ "${SSH_USERNAME}@${SSH_HOST}:${REMOTE_PATH}"
+
+      - name: Post-deploy artisan (optional)
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_PATH: ${{ secrets.SSH_PATH }}
+        run: |
+          PORT="${SSH_PORT:-65002}"
+          REMOTE_PATH="${SSH_PATH:-domains/tkhyl-ai.com/public_html/}"
+          ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 \
+            "${SSH_USERNAME}@${SSH_HOST}" \
+            "cd ${REMOTE_PATH} && php artisan optimize:clear 2>/dev/null || true && php artisan config:cache 2>/dev/null || true && php artisan route:cache 2>/dev/null || true && php artisan view:cache 2>/dev/null || true"
