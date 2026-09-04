@@ -23,22 +23,6 @@ jobs:
       - name: Install Composer dependencies
         run: composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Build frontend assets
-        run: |
-          if [ -f package.json ]; then
-            if [ -f package-lock.json ]; then
-              npm ci
-            else
-              npm install
-            fi
-            npm run build
-          fi
-
       - name: Setup SSH key
         uses: webfactory/ssh-agent@v0.9.0
         with:
