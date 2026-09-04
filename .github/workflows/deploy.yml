@@ -27,12 +27,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
 
       - name: Build frontend assets
         run: |
-          if [ -f package-lock.json ] || [ -f package.json ]; then
-            npm ci || npm install
+          if [ -f package.json ]; then
+            if [ -f package-lock.json ]; then
+              npm ci
+            else
+              npm install
+            fi
             npm run build
           fi
 
